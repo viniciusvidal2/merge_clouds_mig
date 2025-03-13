@@ -2,10 +2,61 @@ import streamlit as st
 from stpyvista import stpyvista as vtki
 import pyvista as pv
 import os
+import base64
 from scripts.cloud_merger import CloudMerger
 
 CLOUDS_DIRECTORY = "/app/clouds"
 MERGED_CLOUD_NAME = "merged_cloud.ply"
+
+
+def layout_definition() -> None:
+    """Define the layout of the application
+    """
+    # General configs
+    st.set_page_config(
+        page_title="SAESC",
+        page_icon="🌍",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    # Background image
+    with open("images/saesc1_faded.png", "rb") as file:
+        image_base64 = base64.b64encode(file.read()).decode()
+        page_bg_img = f"""
+        <style>
+        [data-testid="stAppViewContainer"] {{
+            background: url("data:image/png;base64,{image_base64}") no-repeat center center fixed;
+            background-size: cover;
+        }}
+        </style>
+        """
+        st.markdown(page_bg_img, unsafe_allow_html=True)
+    # Customize checkboxes and font size
+    checkboxes = """
+    <style>
+    /* Force checkbox background to black */
+    [data-testid="stCheckbox"] > div {
+        background-color: black !important;
+        border-radius: 5px;
+    }
+
+    /* Ensure checkbox text remains white for visibility */
+    [data-testid="stCheckbox"] label {
+        color: white !important;
+    }
+    </style>
+    """
+    st.markdown(checkboxes, unsafe_allow_html=True)
+    # Adjust font size
+    font_size = """
+    <style>
+    /* Increase font size for Markdown text */
+    .markdown-text {
+        font-size: 40px !important;  /* Change to any size you like */
+    }
+    </style>
+    """
+    st.markdown(font_size, unsafe_allow_html=True)
 
 
 def add_cloud_load_section(cloud_id: int) -> None:
@@ -76,7 +127,7 @@ def get_cloud_types() -> list:
         elif sonar:
             cloud_types.append("sonar")
         else:
-            cloud_types.append(None)
+            cloud_types.append("unknown")
 
     return cloud_types
 
@@ -101,17 +152,26 @@ def main():
     """Main function to run the stream
     """
     # Init the session state or reset it if needed
-    if "clouds_count" not in st.session_state \
-            and "uploaded_cloud_paths" not in st.session_state \
-            and "xserver" not in st.session_state:
+    if "session_started" not in st.session_state:
+        st.session_state.session_started = True
         reset_session_state()
 
     # Init application
+    layout_definition()
     st.title("SAESC - SAE Scene Creator")
-    st.subheader("Create your own SAE scene with this simple app")
-    st.header("Load the point clouds")
+    st.subheader("Follow the steps to create a scene with the point clouds:")
+    st.markdown("1. **Add Cloud**: Add the point clouds you want to merge. \n"
+                "- You can add as many clouds as you want. \n"
+                "- The clouds can be in PCD or PLY format. \n"
+                "- You **must** select the type of the cloud (Drone or Sonar). \n"
+                "- You can add as many point clouds as you want by clicking repeatedly on the **Add Cloud** button, with maximum size of 1Gb. \n")
+    st.markdown("2. **Create Scene**: Merge the point clouds and create the scene. "
+                "The merged point cloud will be displayed and available for download.")
+    st.markdown("3. **Download merged cloud**: Download the merged point cloud.")
+    st.markdown("4. **Clean Clouds**: Remove all the clouds added to the scene.")
 
     # Create the sections to load the point clouds and clean the state
+    st.header("Load the point clouds")
     add_col, clean_col = st.columns(2)
     with add_col:
         if st.button("Add Cloud"):
@@ -127,26 +187,50 @@ def main():
     if len(st.session_state.uploaded_cloud_paths) > 0 and st.session_state.clouds_count > 0:
         # Create the scene with the plotter
         if st.button("Create Scene"):
-            st.write("Creating scene")
+            st.header("Creating scene")
+
+            # Create the cloud merger object
             merger = CloudMerger(input_clouds_paths=get_cloud_paths(),
                                  input_clouds_types=get_cloud_types(),
                                  clouds_folder=CLOUDS_DIRECTORY,
                                  merged_cloud_name=MERGED_CLOUD_NAME)
-            if merger.merge_clouds():
-                st.write("Clouds were merged, check the result:")
-                merged_cloud_pyvista = merger.get_merged_cloud_pyvista()
-                plotter = pv.Plotter(window_size=[1000, 1000])
-                plotter.add_mesh(mesh=merged_cloud_pyvista,
-                                 scalars=merged_cloud_pyvista.point_data["RGB"], rgb=True)
-                plotter.add_text(f"Merged Cloud", position="upper_left")
-                plotter.view_isometric()
-                plotter.background_color = 'black'
-                vtki(plotter, key=f"plotter")
 
-            # Download the merged cloud
-            merged_cloud = merger.get_merged_cloud_bytes()
-            st.download_button("Download merged cloud and Clear session!", merged_cloud,
-                               MERGED_CLOUD_NAME, "Download the merged cloud")
+            # Call the merge process and fill in the progress to the user with the yielded results
+            merge_success = False
+            pct = 0
+            progress_bar = st.progress(0)
+            for update_data in merger.merge_clouds():
+                merge_success = update_data["result"]
+                pct = update_data["pct"]
+                status = update_data["status"]
+                progress_bar.progress(pct)
+                if not merge_success:
+                    st.error(
+                        f"Error during the merge process: {status}. Refresh the application and try again.")
+                    break
+                if pct == 1.0:
+                    st.success(f"**{status}**")
+                    break
+                st.markdown(f"- **{status}**")
+
+            # If the merge went well, plot it for the user and enable download
+            if merge_success and pct == 1.0:
+                header_col, dwlnd_col = st.columns(2)
+                with header_col:
+                    st.header("Result display:")
+                with dwlnd_col:
+                    merged_cloud = merger.get_merged_cloud_bytes()
+                    st.download_button("Download merged cloud!", merged_cloud,
+                                       MERGED_CLOUD_NAME, "Download the merged cloud")
+                with st.spinner("Loading merged cloud, it can take up to a minute or two ..."):
+                    merged_cloud_pyvista = merger.get_merged_cloud_pyvista()
+                    plotter = pv.Plotter(window_size=[1920, 1080])
+                    plotter.add_mesh(mesh=merged_cloud_pyvista,
+                                     scalars=merged_cloud_pyvista.point_data["RGB"], rgb=True)
+                    plotter.add_text(f"Merged Cloud", position="upper_left")
+                    plotter.view_isometric()
+                    plotter.background_color = 'black'
+                    vtki(plotter, key=f"plotter")
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ import argparse
 import os
 from copy import deepcopy
 import pyvista as pv
+import matplotlib.cm as cm
+from typing import Generator
 
 
 class CloudMerger:
@@ -40,6 +42,14 @@ class CloudMerger:
         cloud.normals = o3d.utility.Vector3dVector(
             np.array(cloud.normals) * np.array([1, 1, -1]))
 
+        # Apply colormap intensity to the point cloud according to the depth in z
+        z_values = np.abs(np.array(cloud.points)[:, 2])
+        intensity = 1.0 - (z_values - np.min(z_values)) / \
+            (np.max(z_values) - np.min(z_values))
+        colormap = "seismic"  # or viridis
+        cmap = cm.get_cmap(colormap)
+        cloud.colors = o3d.utility.Vector3dVector(cmap(intensity)[:, :3])
+
         # Return a copy of it
         return deepcopy(cloud)
 
@@ -61,44 +71,54 @@ class CloudMerger:
         # Return a copy of it
         return deepcopy(cloud)
 
-    def merge_clouds(self) -> bool:
+    def merge_clouds(self) -> Generator[dict, None, None]:
         """Merges the point clouds properly into a single point cloud object.
 
         Returns:
-            bool: true if the point clouds were merged successfully
+            dict: Status: message of the process. Result: true if the point cloud was merged successfully. Pct: percentage of the process [0.0, 1.0].
         """
         # If output directory does not exist, call an error
         if not os.path.exists(os.path.dirname(self.output_path)):
-            print(
-                f"Error: output directory {os.path.dirname(self.output_path)} does not exist")
-            return False
+            yield {"status": f"Error: output directory {os.path.dirname(self.output_path)} does not exist", "result": False, "pct": 0}
 
         if len(self.input_clouds_paths) == 0:
-            print("Error: no input point clouds were provided")
-            return False
+            yield {"status": "Error: no input point clouds were provided", "result": False, "pct": 0}
 
-        for c_path, c_type in zip(self.input_clouds_paths, self.input_clouds_types):
+        # Amount of processes to run
+        process_count = float(len(self.input_clouds_paths) + 1)
+        pct = 0
+
+        for i in range(len(self.input_clouds_paths)):
+            c_path = self.input_clouds_paths[i]
+            c_type = self.input_clouds_types[i]
+
+            # Initial percentage yield
+            pct = float(i) / process_count
+            yield {"status": f"Processing point cloud {i + 1} out of {len(self.input_clouds_paths)}", "result": True, "pct": pct}
+
             # Load the point cloud
             cloud = o3d.io.read_point_cloud(c_path)
             if cloud is None:
-                print(f"Error: could not load point cloud from {c_path}")
-                return False
+                yield {"status": f"Error: could not load point cloud from {c_path}", "result": False, "pct": 0}
 
             # Merge the point cloud according to the type
-            if c_type == "sonar":
+            if c_type == "unknown":
+                yield {"status": f"Error: unknown point cloud type {c_type} for point cloud {c_path}", "result": False, "pct": 0}
+            elif c_type == "sonar":
                 self.merged_cloud += self.process_sonar_cloud(cloud)
             elif c_type == "sfm":
                 self.merged_cloud += self.process_sfm_cloud(cloud)
-            else:
-                print(
-                    f"Error: unknown point cloud type {c_type} for point cloud {c_path}")
-                return False
+
+            # Final percentage yield
+            pct = float(i + 1) / process_count
+            yield {"status": f"Processed point cloud {i + 1}!", "result": True, "pct": pct}
 
         # Save the merged point cloud
+        yield {"status": "Saving merged cloud ...", "result": True, "pct": pct}
         if not self.save_merged_cloud():
-            return False
+            yield {"status": f"Unable to save the merged cloud to {self.output_path}", "result": False, "pct": 0}
 
-        return True
+        yield {"status": "Point cloud was merged succesfully", "result": True, "pct": 1.0}
 
     def save_merged_cloud(self) -> bool:
         """Saves the merged point cloud to the output path.
@@ -108,8 +128,6 @@ class CloudMerger:
         """
         # Save the merged point cloud
         if not o3d.io.write_point_cloud(self.output_path, self.merged_cloud):
-            print(
-                f"Error: could not save the merged point cloud to {self.output_path}")
             return False
 
         return True
