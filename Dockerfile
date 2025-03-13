@@ -10,10 +10,12 @@ RUN apt-get update && \
     apt-get clean
 RUN pip3 install --upgrade pip
 
-# Create the /app and /app/clouds directories, copy infrequent files
-RUN mkdir -p /app /app/clouds
+# Create the /app  directory, copy infrequent files
+RUN mkdir -p /app 
 WORKDIR /app
 COPY .streamlit /app/.streamlit
+COPY images /app/images
+COPY clouds /app/clouds
 
 # Install required Python packages
 COPY requirements/requirements.txt /app/requirements.txt
