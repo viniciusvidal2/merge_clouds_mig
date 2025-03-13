@@ -1,4 +1,4 @@
-name: mig_merge_clouds
+name: merge_clouds_mig
 channels:
   - defaults
   - https://repo.anaconda.com/pkgs/main
