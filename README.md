@@ -40,6 +40,6 @@ You can just pull the image from Dockerhub as well and try out in your machine:
 
 ```bash
 docker pull viniciusfvidal/merge_clouds_mig:latest
-docker tag viniciusfvidal/merge_clouds_mig:latest chat-app:latest
+docker tag viniciusfvidal/merge_clouds_mig:latest merge_clouds_mig:latest
 docker run --rm -it -p 8501:8501 --name merge_clouds_mig merge_clouds_mig:latest
 ```
