@@ -4,12 +4,12 @@ import argparse
 import os
 from copy import deepcopy
 import pyvista as pv
-import matplotlib.cm as cm
+from matplotlib import colormaps
 from typing import Generator
 
 
 class CloudMerger:
-    def __init__(self, input_clouds_paths: list, input_clouds_types: list, clouds_folder: str, merged_cloud_name: str) -> None:
+    def __init__(self, input_clouds_paths: list, input_clouds_types: list, clouds_folder: str, merged_cloud_name: str, sea_level_ref: float) -> None:
         """Initializes the CloudMerger class with the output path and the input point clouds paths and types.
 
         Args:
@@ -17,11 +17,14 @@ class CloudMerger:
             input_clouds_types (list): input point clouds types, wether sonar or sfm
             clouds_folder (str): folder where the point clouds are stored
             merged_cloud_name (str): name of the merged point cloud
+            sea_level_ref (float): reference sea level to add to Z readings
         """
         self.input_clouds_paths = input_clouds_paths
         self.input_clouds_types = input_clouds_types
         self.merged_cloud = o3d.geometry.PointCloud()
         self.output_path = os.path.join(clouds_folder, merged_cloud_name)
+        self.sea_level_ref = sea_level_ref  # Reference sea level [m]
+        self.sonar_depth = 0.5  # [m]
 
     def process_sonar_cloud(self, cloud: o3d.geometry.PointCloud) -> o3d.geometry.PointCloud:
         """Processes the sonar point cloud by removing the noise and the ground plane.
@@ -32,25 +35,25 @@ class CloudMerger:
         Returns:
             o3d.geometry.PointCloud: processed sonar point cloud
         """
-        # Flip the point cloud in z direction
-        cloud.points = o3d.utility.Vector3dVector(
-            np.array(cloud.points) * np.array([1, 1, -1]))
-
+        # Voxelgrid
+        cloud = cloud.voxel_down_sample(voxel_size=0.05)
+        # Flip the point cloud in z direction and correct sea level
+        points = np.array(cloud.points) * np.array([1, 1, -1])
+        points[:, 2] += self.sea_level_ref - self.sonar_depth
+        cloud.points = o3d.utility.Vector3dVector(points)
         # Calculate the normals, flipping towards positive z
         cloud.estimate_normals(
             search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
         cloud.normals = o3d.utility.Vector3dVector(
             np.array(cloud.normals) * np.array([1, 1, -1]))
-
         # Apply colormap intensity to the point cloud according to the depth in z
         z_values = np.abs(np.array(cloud.points)[:, 2])
         intensity = 1.0 - (z_values - np.min(z_values)) / \
             (np.max(z_values) - np.min(z_values))
-        colormap = "seismic"  # or viridis
-        cmap = cm.get_cmap(colormap)
+        colormap_name = "seismic"  # or viridis
+        cmap = colormaps.get_cmap(colormap_name)
         cloud.colors = o3d.utility.Vector3dVector(cmap(intensity)[:, :3])
 
-        # Return a copy of it
         return deepcopy(cloud)
 
     def process_sfm_cloud(self, cloud: o3d.geometry.PointCloud) -> o3d.geometry.PointCloud:
@@ -62,13 +65,21 @@ class CloudMerger:
         Returns:
             o3d.geometry.PointCloud: processed sfm point cloud
         """
+        # Remove SOR noise
+        cloud, _ = cloud.remove_statistical_outlier(nb_neighbors=20,
+                                                      std_ratio=2.0)
+        points = np.array(cloud.points)
+        # Find the minimum Z that should be close to the water level
+        min_z = np.min(points[:, 2])
+        # Add the sea level reference to ajust the Z values
+        points[:, 2] += self.sea_level_ref - min_z
+        cloud.points = o3d.utility.Vector3dVector(points)
         # Calculate the normals, flipping towards positive z
         cloud.estimate_normals(
             search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
         cloud.normals = o3d.utility.Vector3dVector(
             np.array(cloud.normals) * np.array([1, 1, -1]))
 
-        # Return a copy of it
         return deepcopy(cloud)
 
     def merge_clouds(self) -> Generator[dict, None, None]:
@@ -196,7 +207,9 @@ if __name__ == "__main__":
     # Merge the point clouds
     cloud_merger = CloudMerger(input_clouds_paths=input_clouds_paths,
                                input_clouds_types=input_clouds_types,
-                               clouds_folder=os.path.join(os.path.dirname(output_path), ".."),
-                               merged_cloud_name=output_path)
+                               clouds_folder=os.path.join(
+                                   os.path.dirname(output_path), ".."),
+                               merged_cloud_name=output_path,
+                               sea_level_ref=71.3)
     for status in cloud_merger.merge_clouds():
         print(status)

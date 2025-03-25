@@ -193,7 +193,8 @@ def main():
             merger = CloudMerger(input_clouds_paths=get_cloud_paths(),
                                  input_clouds_types=get_cloud_types(),
                                  clouds_folder=CLOUDS_DIRECTORY,
-                                 merged_cloud_name=MERGED_CLOUD_NAME)
+                                 merged_cloud_name=MERGED_CLOUD_NAME,
+                                 sea_level_ref=71.3)
 
             # Call the merge process and fill in the progress to the user with the yielded results
             merge_success = False
