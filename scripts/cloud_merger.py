@@ -177,6 +177,14 @@ class CloudMerger:
         """
         with open(self.output_path, "rb") as f:
             return f.read()
+        
+    def set_sea_level_ref(self, sea_level_ref: float) -> None:
+        """Sets the sea level reference.
+
+        Args:
+            sea_level_ref (float): reference sea level
+        """
+        self.sea_level_ref = sea_level_ref
 
 
 if __name__ == "__main__":

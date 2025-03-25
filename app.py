@@ -143,6 +143,8 @@ def reset_session_state() -> None:
     for c in os.listdir(CLOUDS_DIRECTORY):
         if c.endswith(".ply"):
             os.remove(os.path.join(CLOUDS_DIRECTORY, c))
+    # Start the altitude quote
+    st.session_state.altitude_quote = 0
     # Start xserver for pyvista to work in docker
     st.session_state.xserver = True
     pv.start_xvfb()
@@ -160,15 +162,27 @@ def main():
     layout_definition()
     st.title("SAESC - SAE Scene Creator")
     st.subheader("Follow the steps to create a scene with the point clouds:")
-    st.markdown("1. **Add Cloud**: Add the point clouds you want to merge. \n"
+    st.markdown("1. **Water altitude quote**: The water altitude quote of the date when the sonar point cloud was captured. Leave 0 for no quote")
+    st.markdown("2. **Add Cloud**: Add the point clouds you want to merge. \n"
                 "- You can add as many clouds as you want. \n"
                 "- The clouds can be in PCD or PLY format. \n"
                 "- You **must** select the type of the cloud (Drone or Sonar). \n"
                 "- You can add as many point clouds as you want by clicking repeatedly on the **Add Cloud** button, with maximum size of 1Gb. \n")
-    st.markdown("2. **Create Scene**: Merge the point clouds and create the scene. "
+    st.markdown("3. **Create Scene**: Merge the point clouds and create the scene. "
                 "The merged point cloud will be displayed and available for download.")
-    st.markdown("3. **Download merged cloud**: Download the merged point cloud.")
-    st.markdown("4. **Clean Clouds**: Remove all the clouds added to the scene.")
+    st.markdown("4. **Download merged cloud**: Download the merged point cloud.")
+    st.markdown("5. **Clean Clouds**: Remove all the clouds added to the scene.")
+
+    # Adding field with description of current altitude quote
+    st.header("Altitude Quote")
+    altitude_quote = st.text_input(
+        "Enter the altitude quote of the day:",
+        value="0"
+    )
+    if altitude_quote != st.session_state.altitude_quote:
+        st.session_state.altitude_quote = altitude_quote
+        if merger := st.session_state.get("merger"):
+            merger.set_sea_level_ref(float(altitude_quote))
 
     # Create the sections to load the point clouds and clean the state
     st.header("Load the point clouds")
@@ -194,7 +208,7 @@ def main():
                                  input_clouds_types=get_cloud_types(),
                                  clouds_folder=CLOUDS_DIRECTORY,
                                  merged_cloud_name=MERGED_CLOUD_NAME,
-                                 sea_level_ref=71.3)
+                                 sea_level_ref=float(st.session_state.altitude_quote))
 
             # Call the merge process and fill in the progress to the user with the yielded results
             merge_success = False
