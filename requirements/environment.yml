@@ -70,7 +70,7 @@ dependencies:
       - markdown==3.7
       - markdown-it-py==3.0.0
       - markupsafe==3.0.2
-      - matplotlib==3.10.1
+      - matplotlib==3.7.5
       - matplotlib-inline==0.1.7
       - mdit-py-plugins==0.4.2
       - mdurl==0.1.2
