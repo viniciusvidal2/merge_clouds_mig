@@ -174,10 +174,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Merge point clouds into a single point cloud")
     parser.add_argument("--output_path", type=str,
-                        default=os.path.join(root_path, "merged_cloud.ply"), required=False,
+                        default=os.path.join(root_path, "../merged_cloud.ply"), required=False,
                         help="path to save the merged point cloud")
     parser.add_argument("--input_clouds_paths", type=list,
-                        default=[os.path.join(root_path, "barragem.ply"), os.path.join(root_path, "espigao.ply")], required=False,
+                        default=[os.path.join(root_path, "../barragem.ply"), os.path.join(root_path, "../espigao.ply")], required=False,
                         help="list of paths to the input point clouds")
     parser.add_argument("--input_clouds_types", type=list,
                         default=["sonar", "sfm"], required=False,
@@ -185,16 +185,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Create the input point clouds data dictionary and the output path
-    input_clouds_data = {
-        "paths": args.input_clouds_paths,
-        "types": args.input_clouds_types
-    }
     output_path = args.output_path
+    input_clouds_paths = args.input_clouds_paths
+    input_clouds_types = args.input_clouds_types
+    print("Input parameters:")
+    print(f"Output path: {output_path}")
+    print(f"Input clouds paths: {input_clouds_paths}")
+    print(f"Input clouds types: {input_clouds_types}")
 
     # Merge the point clouds
-    cloud_merger = CloudMerger(
-        output_path, input_clouds_data['paths'], input_clouds_data['types'])
-    if cloud_merger.merge_clouds(input_clouds_data, output_path):
-        print("Point clouds merged successfully")
-    else:
-        print("Error: could not merge the point clouds")
+    cloud_merger = CloudMerger(input_clouds_paths=input_clouds_paths,
+                               input_clouds_types=input_clouds_types,
+                               clouds_folder=os.path.join(os.path.dirname(output_path), ".."),
+                               merged_cloud_name=output_path)
+    for status in cloud_merger.merge_clouds():
+        print(status)
